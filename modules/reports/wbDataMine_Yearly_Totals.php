@@ -35,7 +35,7 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
        ************************************************************************************************************/
 
         $this->setReportData(array(
-          'title'         => 'wbDataMine: Yearly Totals',
+          'title'         => 'wbDataMine: Yearly Invoice Totals',
           'description'   => 'This report will generate a showing total invoice activity over a number of years.',
           'headertext'    => '',
           'footertext'    => '',
@@ -131,8 +131,8 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
        * Header & Footer Text
        ************************************************************************************************************/
 
-        if( !$isPrintFormat )
-          wbDataMine_Yearly_Totals::applyFilterForm();
+        if( !$this->_printMode )
+          $this->applyFilterForm($filterData);
 
       /************************************************************************************************************
        * Data Rows
@@ -159,8 +159,8 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
             );
           $res = $this->payment_methods($year);
           foreach($res AS $v)
-            $reportLine[] = $this->_currencySymbol . $v;
-          $this->_reportData["tablevalues"][] = preg_replace('/^\*+/','',$isPrintFormat ? $this->stripTags($reportLine) : $reportLine);
+            $reportLine[] = $this->curFormat($v);
+          $this->_reportData["tablevalues"][] = preg_replace('/^\*+/','',$this->_printMode ? $this->stripTags($reportLine) : $reportLine);
           $year--;
           $runaway++;
         } while( $runaway < 25 && $runaway < $filterData['numyears'] );
@@ -225,13 +225,13 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
       $years = array_keys($this->_monthlyNet);
       if( $year ){
         for($i=1;$i<=12;$i++)
-          $total += self::monthly_net($year, $i);
+          $total += $this->monthly_net($year, $i);
         $res = round($total / 12,2);
       }
       else {
         foreach( $years AS $year )
           for($i=1;$i<=12;$i++)
-            $total += self::monthly_net($year, $i);
+            $total += $this->monthly_net($year, $i);
         $res = round($total / (count($years)*12),2);
       }
       return $res;
@@ -239,7 +239,7 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
 
     function yearly_net($year){
       for($i=1;$i<=12;$i++)
-        $total += self::monthly_net($year, $i);
+        $total += $this->monthly_net($year, $i);
       return $total;
     }
 
@@ -247,10 +247,10 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
       $years = array_keys($this->_monthlyNet);
       foreach( $years AS $year ){
         if( $month )
-          $total += self::monthly_net($year, $month);
+          $total += $this->monthly_net($year, $month);
         else
           for($i=1;$i<=12;$i++)
-            $total += self::monthly_net($year, $i);
+            $total += $this->monthly_net($year, $i);
       }
       return round($total / count($years),2);
     }
@@ -291,7 +291,7 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
       $total = array();
       $years = array_keys($this->_paymentNet);
       foreach( $years AS $year ){
-        $rows[$year] = self::payment_methods($year);
+        $rows[$year] = $this->payment_methods($year);
         for($i=0;$i<count($rows[$year]);$i++)
           $total[$i] += $rows[$year][$i];
       }
@@ -306,5 +306,4 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
  * Header & Footer Text
  ************************************************************************************************************/
 
-  $report = new wbDataMine_Yearly_Totals();
-  $reportdata = $report->getReportData();
+  $reportdata = (new wbDataMine_Yearly_Totals())->getReportData();

@@ -11,270 +11,237 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
  ************************************************************************************************************/
 
   require 'wbDataMine.class.php';
-  $wbDataMine = new wbDataMine();
 
 /************************************************************************************************************
- * Import WHMCS
+ * Report Class
  ************************************************************************************************************/
 
-  global $CONFIG, $CurrencySymbol;
-  $CurrencySymbol = isset($CurrencySymbol) ? $CurrencySymbol : (isset($CONFIG["CurrencySymbol"]) ? $CONFIG["CurrencySymbol"] : '$');
-  $isPrintFormat  = isset($_GET['print']) && $_GET['print'] == 'true';
+  class wbDataMine_ServiceReport extends wbDataMine {
 
-/************************************************************************************************************
- * Report Setup
- ************************************************************************************************************/
+    function __construct(){
 
-  $reportdata["title"]          = 'wbDataMine: Invoice Filter';
-  $reportdata["description"]    = 'This report will generate a table of invoices matching your filter criteria.';
-  $reportdata["tableheadings"]  = array();
-  $reportdata["tablevalues"]    = array();
-  $reportdata["headertext"]     = '';
-  $reportdata["footertext"]     = '';
+      /************************************************************************************************************
+       * Parent Init
+       ************************************************************************************************************/
 
-/************************************************************************************************************
- * Report Columns
- ************************************************************************************************************/
+        parent::__construct();
 
-  $ordering = explode('-',$_REQUEST['order']);
-  if( count($ordering) != 2 ) $ordering = array('tblhosting.id','asc');
-  $headerColumns = array(
-    'line_number'                   => array('label'=>'#', 'field'=>''),
-    'tblclients.id'                 => array('label'=>'Client ID'),
-    'tblclients.lastname'           => array('label'=>'Client'),
-    'tblhosting.id'                 => array('label'=>'Service ID'),
-    'tblhosting.regdate'            => array('label'=>'Date'),
-    'tblhosting.nextduedate'        => array('label'=>'Due Date'),
-    'tblhosting.termination_date'   => array('label'=>'Termination Date'),
-    'tblhosting.domainstatus'       => array('label'=>'Status'),
-    'tblhosting.firstpaymentamount' => array('label'=>'First Payment'),
-    'tblhosting.amount'             => array('label'=>'Recurring Payment'),
-    'tblhosting.billingcycle'       => array('label'=>'Billing Cycle'),
-    'total_months'                  => array('label'=>'Total Months'),
-    'total_paid'                    => array('label'=>'Total Paid'),
-    );
-  foreach($headerColumns AS $colKey => $colCfg)
-    if( $isPrintFormat )
-      $reportdata["tableheadings"][] = $colCfg['label'];
-    else if( isset($colCfg['field']) && empty($colCfg['field']) )
-      $reportdata["tableheadings"][] = $colCfg['label'];
-    else
-      $reportdata["tableheadings"][] = '<a href="javascript:void(0);" onclick="wbReportForm_sort(this);" order="'.($colCfg['field']?$colCfg['field']:$colKey).'-'.($ordering[1]=='asc'?'desc':'asc').'"'.(($colCfg['field']?$colCfg['field']:$colKey) == $ordering[0]?' class="active"':'').'>'.$colCfg['label'].'</a>';
+      /************************************************************************************************************
+       * Ordering / Headers
+       ************************************************************************************************************/
 
-/************************************************************************************************************
- * Report Filters
- ************************************************************************************************************/
+        $ordering = explode('-', @$_REQUEST['order']);
+        if( count($ordering) != 2 )
+          $ordering = array('tblhosting.id','asc');
+        $tableheadings = $this->createTableHeadings(array(
+          'line_number'                   => array('label'=>'#', 'field'=>''),
+          'tblclients.id'                 => array('label'=>'Client ID'),
+          'tblclients.lastname'           => array('label'=>'Client'),
+          'tblhosting.id'                 => array('label'=>'Service ID'),
+          'tblhosting.regdate'            => array('label'=>'Date'),
+          'tblhosting.nextduedate'        => array('label'=>'Due Date'),
+          'tblhosting.termination_date'   => array('label'=>'Termination Date'),
+          'tblhosting.domainstatus'       => array('label'=>'Status'),
+          'tblhosting.firstpaymentamount' => array('label'=>'First Payment'),
+          'tblhosting.amount'             => array('label'=>'Recurring Payment'),
+          'tblhosting.billingcycle'       => array('label'=>'Billing Cycle'),
+          'total_months'                  => array('label'=>'Total Months'),
+          'total_paid'                    => array('label'=>'Total Paid'),
+          ), $ordering);
 
-  $filter = $_REQUEST['filter'];
-  $filterFields = array(
-    'datemin'  => array(
-      'type'      => 'text',
-      'label'     => 'Start Date/Time',
-      'default'   => date('m/d/Y',strtotime(date('Y-m').'-01')),
-      'extra'     => 'size="24" class="datepick"'
-    ),
-    'datemax'  => array(
-      'type'      => 'text',
-      'label'     => 'Stop Date/Time',
-      'default'   => date('m/d/Y',strtotime(date('Y-m-d',strtotime('Today')))),
-      'extra'     => 'size="24" class="datepick"'
-    ),
-    'packageid'  => array(
-      'type'      => 'text',
-      'label'     => 'Product ID',
-      'default'   => '',
-      'extra'     => 'size="12"'
-    ),
-  );
-  if( !is_array($filter) ){
-    $filter = array();
-    foreach( $filterFields AS $filterField => $filterConfig )
-      $filter[$filterField] = $filterConfig['default'];
+      /************************************************************************************************************
+       * Report Setup
+       ************************************************************************************************************/
+
+        $this->setReportData(array(
+          'title'         => 'wbDataMine: Service Report',
+          'description'   => 'This report shows client services for a product.',
+          'headertext'    => '',
+          'footertext'    => '',
+          'tableheadings' => $tableheadings,
+          'tablevalues'   => array()
+          ));
+
+      /************************************************************************************************************
+       * Report Filters
+       ************************************************************************************************************/
+
+        $dbh = $this->dbh();
+        $dbh->runQuery("
+          SELECT
+            `product`.`id`
+            , CONCAT(`productgroup`.`name`, ' > ', `product`.`name`) AS `name`
+          FROM `tblproducts` AS `product`
+          LEFT JOIN `tblproductgroups` AS `productgroup` ON `productgroup`.`id` = `product`.`gid`
+          ORDER BY `productgroup`.`order`
+            , `product`.`order`
+          ");
+        $products = $dbh->getRows();
+        $productOptions = array();
+        foreach ($products AS $product) {
+          $productOptions[ $product['id'] ] = $product['name'];
+        }
+
+      /************************************************************************************************************
+       * Report Filters
+       ************************************************************************************************************/
+
+        $this->setFilterFields(array(
+          'datemin'  => array(
+            'type'      => 'text',
+            'label'     => 'Start Date/Time',
+            'default'   => date('m/d/Y',strtotime(date('Y-m').'-01')),
+            'extra'     => 'size="24" class="datepick"'
+          ),
+          'datemax'  => array(
+            'type'      => 'text',
+            'label'     => 'Stop Date/Time',
+            'default'   => date('m/d/Y',strtotime(date('Y-m-d',strtotime('Today')))),
+            'extra'     => 'size="24" class="datepick"'
+          ),
+          'status'  => array(
+            'type'      => 'select',
+            'label'     => 'Filter by Status',
+            'default'   => '',
+            'multiple'  => true,
+            'options'   => array(
+              'Active'     => 'Active',
+              'Pending'    => 'Pending',
+              'Completed'  => 'Completed',
+              'Suspended'  => 'Suspended',
+              'Terminated' => 'Terminated',
+              'Cancelled'  => 'Cancelled',
+              'Fraud'      => 'Fraud'
+            )
+          ),
+          'packageid'  => array(
+            'type'      => 'select',
+            'label'     => 'Product',
+            'default'   => '',
+            'options'   => $productOptions
+          )
+          ));
+
+      /************************************************************************************************************
+       * Update Filter Data
+       ************************************************************************************************************/
+
+        $filterData =& $this->getFilterData();
+        $filterData['status'] = (array)@$filterData['status'];
+
+      /************************************************************************************************************
+       * Header & Footer Text
+       ************************************************************************************************************/
+
+        if( !$this->_printMode )
+          $this->applyFilterForm($filterData);
+
+      /************************************************************************************************************
+       * Query
+       ************************************************************************************************************/
+
+        $dbh = $this->dbh();
+        $dateMin   = date('Y-m-d',strtotime($filterData['datemin']));
+        $dateMax   = date('Y-m-d',strtotime($filterData['datemax']));
+        $packageid = (int)$filterData['packageid'];
+        $status    = array_filter(array_walk($filterData['status'], function($v){ return preg_replace('/[^A-Za-z]/', '', $v); }));
+        $result = $dbh->runQuery("
+                    SELECT `tblhosting`.*
+                      , CONCAT(`tblclients`.`firstname`, ' ', `tblclients`.`lastname`) AS 'fullname'
+                      , SUM(IF(`tblinvoices`.`status` = 'Paid', `tblinvoiceitems`.`amount`, 0)) AS `total_paid`
+                      , TIMESTAMPDIFF(MONTH, `tblhosting`.`regdate`, IF(`tblhosting`.`termination_date`, `tblhosting`.`termination_date`, CURDATE())) AS `total_months`
+                    FROM `tblhosting`
+                    LEFT JOIN `tblclients` ON `tblclients`.`id` = `tblhosting`.`userid`
+                    LEFT JOIN `tblinvoiceitems` ON `tblinvoiceitems`.`relid` = `tblhosting`.`id`
+                    LEFT JOIN `tblinvoices` ON `tblinvoices`.`id` = `tblinvoiceitems`.`invoiceid`
+                    WHERE `tblhosting`.`regdate` >= '". $dbh->getEscaped($dateMin) ."'
+                      AND `tblhosting`.`regdate` <= '". $dbh->getEscaped($dateMax) ."'
+                      ". ($packageid ? "AND `tblhosting`.`packageid` = '". $dbh->getEscaped($packageid) ."'" : '') ."
+                      ". ($status ? "AND `tblhosting`.`domainstatus` IN ('". implode("','", $status) ."')" : '') ."
+                    GROUP BY `tblhosting`.`id`
+                    ORDER BY ". $dbh->getEscaped($ordering[0]) .' '. $dbh->getEscaped($ordering[1])
+                    );
+        $rows = $dbh->getRows();
+
+      /************************************************************************************************************
+       * Data Rows
+       ************************************************************************************************************/
+
+        $rowCount       = 0;
+        $grandTotal     = 0;
+        $grandTotalPaid = 0;
+        $totalMonths    = 0;
+        $lineNumber     = 1;
+        foreach ($rows AS $row) {
+          $rowCount++;
+          $startDate = $row['regdate'];
+          $closeDate = $row['termination_date'] ?: date('Y-m-d');
+          $reportLine = array(
+            $lineNumber++,
+            '<a target="_blank" href="clientssummary.php?userid='. $row['userid'] . '">'.$row['userid'] .'</a>',
+            '<a target="_blank" href="clientssummary.php?userid='. $row['userid'] . '">'. $row['fullname'] .'</a>',
+            '<a target="_blank" href="clientsservices.php?userid='. $row['userid'] . '&id='.$row['id'].'">'.$row['id'] .'</a>',
+            fromMySQLDate($row['regdate']),
+            fromMySQLDate($row['nextduedate']),
+            fromMySQLDate($row['termination_date']),
+            $row['domainstatus'],
+            $this->curFormat($row['firstpaymentamount']),
+            $this->curFormat($row['amount']),
+            $row['billingcycle'],
+            $row['total_months'],
+            $this->curFormat($row['total_paid']),
+            );
+          $grandTotal += $row['firstpaymentamount'];
+          $totalMonths += $row['total_months'];
+          $grandTotalPaid += $row['total_paid'];
+          $this->_reportData["tablevalues"][] = preg_replace('/^\*+/','',$this->_printMode ? $this->stripTags($reportLine) : $reportLine);
+        }
+
+      /************************************************************************************************************
+       * Total Row
+       ************************************************************************************************************/
+
+        if( !$this->_printMode ){
+          $reportLine = array(
+            'Tot',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            $this->curFormat($grandTotal),
+            '',
+            '',
+            $totalMonths,
+            $this->curFormat($grandTotalPaid)
+            );
+          $this->_reportData["tablevalues"][] = $reportLine;
+          $reportLine = array(
+            'Avg',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            $this->curFormat($grandTotal / $rowCount),
+            '',
+            '',
+            round($totalMonths / $rowCount, 2),
+            $this->curFormat($grandTotalPaid / $rowCount)
+            );
+          $this->_reportData["tablevalues"][] = $reportLine;
+        }
+
+    }
+
   }
 
 /************************************************************************************************************
  * Header & Footer Text
  ************************************************************************************************************/
 
-  if( !$isPrintFormat ){
-    $reportdata["headertext"] .= '
-      <form method="get" action="reports.php" id="wbReportForm">
-      <input type="hidden" name="print" value="" />
-      <input type="hidden" name="report" value="'. $_REQUEST['report'] .'" />
-      <input type="hidden" name="order" value="'.$ordering[0].'-'.$ordering[1].'" />
-      <table class="form" width="100%" border="0" cellspacing="2" cellpadding="3">
-      ';
-    foreach( $filterFields AS $filterField => $filterConfig ){
-      $reportdata["headertext"] .= '<tr>';
-      $reportdata["headertext"] .= '<td width="20%" class="fieldlabel">'.$filterConfig['label'].'</td>';
-      $reportdata["headertext"] .= '<td class="fieldarea">';
-      switch( $filterConfig['type'] ){
-        case 'text':
-          $reportdata["headertext"] .= '<input name="filter['.$filterField.']" value="'.(isset($filter[$filterField]) ? $filter[$filterField] : $filterConfig['default']).'" '.$filterConfig['extra'].'/>';
-          break;
-        case 'select':
-          $reportdata["headertext"] .= '<select name="filter['.$filterField.']" '.$filterConfig['extra'].'>';
-          foreach( $filterConfig['options'] AS $k => $v )
-            $reportdata["headertext"] .= '<option value="'. $k .'"'.((isset($filter[$filterField]) && ($k == $filter[$filterField])) || ((isset($filter[$filterField]) && ($k == $filterConfig['default']))) ? ' selected' : '').'>'. $v .'</option>';
-          $reportdata["headertext"] .= '</select>';
-          break;
-      }
-      $reportdata["headertext"] .= '</td>';
-      $reportdata["headertext"] .= '</tr>';
-    }
-    $reportdata["headertext"] .= '
-      </table>
-      <p align="center">
-        <input type="submit" value=" Filter " onclick="wbReportForm_filter(this);" />
-        <input type="button" value=" Export " onclick="wbReportForm_export(this);" />
-        <input type="button" value=" Print " onclick="wbReportForm_print(this);" />
-      </p>
-      </form>
-      <div class="dataTable">
-      ';
-    $reportdata["footertext"] .= '
-      </div>
-      <script>
-        function wbReportForm_filter(el){
-          document.getElementById(\'wbReportForm\').action = \'reports.php\';
-          document.getElementById(\'wbReportForm\').target = \'_self\';
-          document.getElementById(\'wbReportForm\').print.value = \'\';
-          document.getElementById(\'wbReportForm\').submit();
-          return false;
-        }
-        function wbReportForm_export(el){
-          document.getElementById(\'wbReportForm\').action = \'csvdownload.php\';
-          document.getElementById(\'wbReportForm\').target = \'_blank\';
-          document.getElementById(\'wbReportForm\').print.value = \'true\';
-          document.getElementById(\'wbReportForm\').submit();
-          return false;
-        }
-        function wbReportForm_print(el){
-          document.getElementById(\'wbReportForm\').action = \'reports.php\';
-          document.getElementById(\'wbReportForm\').target = \'_blank\';
-          document.getElementById(\'wbReportForm\').print.value = \'true\';
-          document.getElementById(\'wbReportForm\').submit();
-          return false;
-        }
-        function wbReportForm_sort(el){
-          document.getElementById(\'wbReportForm\').order.value = el.getAttribute(\'order\');
-          document.getElementById(\'wbReportForm\').submit();
-        }
-      </script>
-      <style>
-        .dataTable table tr:nth-child(odd) td {
-          background-color:#f6f6f6;
-        }
-        .dataTable table tr:hover td {
-          background-color:#FFFFAA;
-        }
-        .dataTable table tr:first-child td {
-          border-bottom:1px solid #999;
-          background-color:#efefef;
-          font-weight:bold;
-        }
-        .dataTable table tr:last-child td {
-          border-top:3px double #999;
-          background-color:#dfdfdf;
-          font-weight:bold;
-        }
-        .dataTable table tr td {
-          padding:4px;
-        }
-      </stlye>
-      ';
-  }
-
-/************************************************************************************************************
- * Query
- ************************************************************************************************************/
-
-  $dateMin   = date('Y-m-d',strtotime($filter['datemin']));
-  $dateMax   = date('Y-m-d',strtotime($filter['datemax']));
-  $packageid = intval($filter['packageid']);
-  $result = mysql_query("
-    SELECT `tblhosting`.*
-      , CONCAT(`tblclients`.`firstname`, ' ', `tblclients`.`lastname`) AS 'fullname'
-      , SUM(IF(`tblinvoices`.`status` = 'Paid', `tblinvoiceitems`.`amount`, 0)) AS `total_paid`
-      , TIMESTAMPDIFF(MONTH, `tblhosting`.`regdate`, IF(`tblhosting`.`termination_date`, `tblhosting`.`termination_date`, CURDATE())) AS `total_months`
-    FROM `tblhosting`
-    LEFT JOIN `tblclients` ON `tblclients`.`id` = `tblhosting`.`userid`
-    LEFT JOIN `tblinvoiceitems` ON `tblinvoiceitems`.`relid` = `tblhosting`.`id`
-    LEFT JOIN `tblinvoices` ON `tblinvoices`.`id` = `tblinvoiceitems`.`invoiceid`
-    WHERE `tblhosting`.`packageid` = ".$packageid."
-      AND `tblhosting`.`regdate` >= '". mysql_real_escape_string($dateMin) ."'
-      AND `tblhosting`.`regdate` <= '". mysql_real_escape_string($dateMax) ."'
-    GROUP BY `tblhosting`.`id`
-    ORDER BY ". mysql_real_escape_string($ordering[0]) .' '. mysql_real_escape_string($ordering[1])
-    );
-  $num_rows = mysql_num_rows($result); echo mysql_error();
-
-/************************************************************************************************************
- * Data Rows
- ************************************************************************************************************/
-
-  $rowCount = $grandTotal = $grandTotalPaid = $totalMonths = 0;
-  $lineNumber = 1;
-  while( $row = mysql_fetch_array($result) ) {
-    $rowCount++;
-    $startDate = $row['regdate'];
-    $closeDate = $row['termination_date'] ?: date('Y-m-d');
-    $reportLine = array(
-      $lineNumber++,
-      '<a target="_blank" href="clientssummary.php?userid='. $row['userid'] . '">'.$row['userid'] .'</a>',
-      '<a target="_blank" href="clientssummary.php?userid='. $row['userid'] . '">'. $row['fullname'] .'</a>',
-      '<a target="_blank" href="https://billing.holodyn.com/_WHMCS_Admin_/clientsservices.php?userid='. $row['userid'] . '&id='.$row['id'].'">'.$row['id'] .'</a>',
-      fromMySQLDate($row['regdate']),
-      fromMySQLDate($row['nextduedate']),
-      fromMySQLDate($row['termination_date']),
-      $row['domainstatus'],
-      $wbDataMine->curFormat($row['firstpaymentamount']),
-      $wbDataMine->curFormat($row['amount']),
-      $row['billingcycle'],
-      $row['total_months'],
-      $wbDataMine->curFormat($row['total_paid']),
-      );
-    $grandTotal += $row['firstpaymentamount'];
-    $totalMonths += $row['total_months'];
-    $grandTotalPaid += $row['total_paid'];
-    $reportdata["tablevalues"][] = preg_replace('/^\*+/','',$isPrintFormat ? $wbDataMine->stripTags($reportLine) : $reportLine);
-  }
-
-/************************************************************************************************************
- * Total Row
- ************************************************************************************************************/
-
-  if( !$isPrintFormat ){
-    $reportLine = array(
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      $wbDataMine->curFormat($grandTotal),
-      '',
-      '',
-      $totalMonths,
-      $wbDataMine->curFormat($grandTotalPaid)
-      );
-    $reportdata["tablevalues"][] = $reportLine;
-    $reportLine = array(
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      $wbDataMine->curFormat($grandTotal / $rowCount),
-      '',
-      '',
-      round($totalMonths / $rowCount, 2),
-      $wbDataMine->curFormat($grandTotalPaid / $rowCount)
-      );
-    $reportdata["tablevalues"][] = $reportLine;
-  }
+  $reportdata = (new wbDataMine_ServiceReport())->getReportData();
