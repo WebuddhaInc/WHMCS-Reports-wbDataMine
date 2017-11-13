@@ -55,7 +55,7 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
        ************************************************************************************************************/
 
         $this->setReportData(array(
-          'title'         => 'wbDataMine: Service Report',
+          'title'         => 'wbDataMine: Client Service',
           'description'   => 'This report shows client services for a product.',
           'headertext'    => '',
           'footertext'    => '',
