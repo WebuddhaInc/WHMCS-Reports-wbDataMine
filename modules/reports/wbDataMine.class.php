@@ -90,6 +90,7 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
       $filter = isset($filter) ? $filter : $this->getFilterData();
       $this->_reportData["headertext"] .= '
         <form method="get" action="reports.php" id="wbReportForm">
+        <input type="hidden" name="order" value="'. @$_REQUEST['order'] .'" />
         <input type="hidden" name="print" value="" />
         <input type="hidden" name="report" value="'. $report .'" />
         <table class="form" width="100%" border="0" cellspacing="2" cellpadding="3">
@@ -100,12 +101,15 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
           $this->_reportData["headertext"] .= '<tr>';
         $this->_reportData["headertext"] .= '<td width="20%" class="fieldlabel">'.$filterConfig['label'].'</td>';
         $this->_reportData["headertext"] .= '<td class="fieldarea">';
+        $filterConfig['class'] = isset($filterConfig['class']) ? $filterConfig['class'] : '';
         switch( $filterConfig['type'] ){
           case 'text':
-            $this->_reportData["headertext"] .= '<input name="filter['.$filterField.']" value="'.(isset($filter[$filterField]) ? $filter[$filterField] : $filterConfig['default']).'" onchange="wbReportForm_filter(this);" '. (string)@$filterConfig['extra'] .'/>';
+            $this->_reportData["headertext"] .= '<input name="filter['.$filterField.']" value="'.(isset($filter[$filterField]) ? $filter[$filterField] : $filterConfig['default']).'" '. (string)@$filterConfig['extra'] .'/>';
             break;
           case 'select':
-            $this->_reportData["headertext"] .= '<select name="filter['.$filterField.']'. (@$filterConfig['multiple']?'[]':'') .'" '. (string)@$filterConfig['extra'] .' '. (@$filterConfig['multiple']?'multiple=true':'onchange="wbReportForm_filter(this);"') .'>';
+            if (@$filterConfig['multiple'])
+              $filterConfig['class'] .= ' chosen';
+            $this->_reportData["headertext"] .= '<select name="filter['.$filterField.']'. (@$filterConfig['multiple']?'[]':'') .'" class="'. trim($filterConfig['class']) .'" style="min-width:240px;" '. (string)@$filterConfig['extra'] .' '. (@$filterConfig['multiple']?'multiple=true':'onchange="wbReportForm_filter(this);"') .'>';
             foreach( $filterConfig['options'] AS $k => $v )
               $this->_reportData["headertext"] .= '<option value="'. $k .'"'.((isset($filter[$filterField]) && in_array($k, (array)$filter[$filterField])) || ((empty($filter[$filterField]) && ($k == $filterConfig['default']))) ? ' selected' : '').'>'. $v .'</option>';
             $this->_reportData["headertext"] .= '</select>';
@@ -156,6 +160,11 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
             document.getElementById(\'wbReportForm\').order.value = el.getAttribute(\'order\');
             document.getElementById(\'wbReportForm\').submit();
           }
+          jQuery(document).ready(function(){
+            if (typeof jQuery.fn.chosen == \'function\') {
+              jQuery(\'#wbReportForm .chosen\').chosen();
+            }
+          });
         </script>
         <style>
           .dataTable table tr:nth-child(odd) td {

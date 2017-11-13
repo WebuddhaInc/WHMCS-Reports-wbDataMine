@@ -46,7 +46,8 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
           'tblhosting.amount'             => array('label'=>'Recurring Payment'),
           'tblhosting.billingcycle'       => array('label'=>'Billing Cycle'),
           'total_months'                  => array('label'=>'Total Months'),
-          'total_paid'                    => array('label'=>'Total Paid'),
+          // 'total_paid'                    => array('label'=>'Total Paid'),
+          'total_paid_period'             => array('label'=>'Total Paid in Period'),
           ), $ordering);
 
       /************************************************************************************************************
@@ -118,6 +119,7 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
             'type'      => 'select',
             'label'     => 'Product',
             'default'   => '',
+            'multiple'  => true,
             'options'   => $productOptions
           )
           ));
@@ -143,20 +145,34 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
         $dbh = $this->dbh();
         $dateMin   = date('Y-m-d',strtotime($filterData['datemin']));
         $dateMax   = date('Y-m-d',strtotime($filterData['datemax']));
-        $packageid = (int)$filterData['packageid'];
-        $status    = array_filter(array_walk($filterData['status'], function($v){ return preg_replace('/[^A-Za-z]/', '', $v); }));
+        $packageid = array_filter(array_map('intval', $filterData['packageid']));
+        $status    = array_filter(array_map(function($v){ return preg_replace('/[^A-Za-z]/', '', $v); }, $filterData['status']));
         $result = $dbh->runQuery("
-                    SELECT `tblhosting`.*
+                    SELECT
+                      `tblhosting`.*
+                      , `tblproducts`.`name` AS `product_name`
                       , CONCAT(`tblclients`.`firstname`, ' ', `tblclients`.`lastname`) AS 'fullname'
-                      , SUM(IF(`tblinvoices`.`status` = 'Paid', `tblinvoiceitems`.`amount`, 0)) AS `total_paid`
+                      -- , (
+                      --   SELECT SUM(`sub_tblinvoiceitems`.`amount`)
+                      --   FROM `tblinvoiceitems` AS `sub_tblinvoiceitems`
+                      --   LEFT JOIN `tblinvoices` AS `sub_tblinvoices` ON `sub_tblinvoices`.`id` = `sub_tblinvoiceitems`.`invoiceid`
+                      --   WHERE `sub_tblinvoiceitems`.`type` = 'Hosting'
+                      --     AND `sub_tblinvoiceitems`.`relid` = `tblhosting`.`id`
+                      --     AND `sub_tblinvoices`.`status` = 'Paid'
+                      --   ) AS `total_paid`
+                      , SUM(IF(`tblinvoices`.`status` = 'Paid', `tblinvoiceitems`.`amount`, 0)) AS `total_paid_period`
+                      -- , SUM(IF(`tblinvoices`.`date` >= '". $dbh->getEscaped($dateMin) ."' AND `tblinvoices`.`date` <= '". $dbh->getEscaped($dateMax) ."' AND `tblinvoices`.`status` = 'Paid', `tblinvoiceitems`.`amount`, 0)) AS `total_paid_period`
                       , TIMESTAMPDIFF(MONTH, `tblhosting`.`regdate`, IF(`tblhosting`.`termination_date`, `tblhosting`.`termination_date`, CURDATE())) AS `total_months`
                     FROM `tblhosting`
                     LEFT JOIN `tblclients` ON `tblclients`.`id` = `tblhosting`.`userid`
-                    LEFT JOIN `tblinvoiceitems` ON `tblinvoiceitems`.`relid` = `tblhosting`.`id`
+                    LEFT JOIN `tblproducts` ON `tblproducts`.`id` = `tblhosting`.`packageid`
+                    LEFT JOIN `tblinvoiceitems` ON `tblinvoiceitems`.`type` = 'Hosting' AND `tblinvoiceitems`.`relid` = `tblhosting`.`id`
                     LEFT JOIN `tblinvoices` ON `tblinvoices`.`id` = `tblinvoiceitems`.`invoiceid`
-                    WHERE `tblhosting`.`regdate` >= '". $dbh->getEscaped($dateMin) ."'
-                      AND `tblhosting`.`regdate` <= '". $dbh->getEscaped($dateMax) ."'
-                      ". ($packageid ? "AND `tblhosting`.`packageid` = '". $dbh->getEscaped($packageid) ."'" : '') ."
+                    -- WHERE `tblhosting`.`regdate` >= '". $dbh->getEscaped($dateMin) ."'
+                    --   AND `tblhosting`.`regdate` <= '". $dbh->getEscaped($dateMax) ."'
+                    WHERE `tblinvoices`.`date` >= '". $dbh->getEscaped($dateMin) ."'
+                      AND `tblinvoices`.`date` <= '". $dbh->getEscaped($dateMax) ."'
+                      ". ($packageid ? "AND `tblhosting`.`packageid` IN ('". implode("','", $packageid) ."')" : '') ."
                       ". ($status ? "AND `tblhosting`.`domainstatus` IN ('". implode("','", $status) ."')" : '') ."
                     GROUP BY `tblhosting`.`id`
                     ORDER BY ". $dbh->getEscaped($ordering[0]) .' '. $dbh->getEscaped($ordering[1])
@@ -167,11 +183,12 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
        * Data Rows
        ************************************************************************************************************/
 
-        $rowCount       = 0;
-        $grandTotal     = 0;
-        $grandTotalPaid = 0;
-        $totalMonths    = 0;
-        $lineNumber     = 1;
+        $rowCount             = 0;
+        $grandTotal           = 0;
+        $grandTotalPaid       = 0;
+        $grandTotalPaidPeriod = 0;
+        $totalMonths          = 0;
+        $lineNumber           = 1;
         foreach ($rows AS $row) {
           $rowCount++;
           $startDate = $row['regdate'];
@@ -180,7 +197,7 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
             $lineNumber++,
             '<a target="_blank" href="clientssummary.php?userid='. $row['userid'] . '">'.$row['userid'] .'</a>',
             '<a target="_blank" href="clientssummary.php?userid='. $row['userid'] . '">'. $row['fullname'] .'</a>',
-            '<a target="_blank" href="clientsservices.php?userid='. $row['userid'] . '&id='.$row['id'].'">'.$row['id'] .'</a>',
+            '<a target="_blank" href="clientsservices.php?userid='. $row['userid'] . '&id='.$row['id'].'">'.$row['product_name'].' #'.$row['id'].'</a>',
             fromMySQLDate($row['regdate']),
             fromMySQLDate($row['nextduedate']),
             fromMySQLDate($row['termination_date']),
@@ -189,11 +206,13 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
             $this->curFormat($row['amount']),
             $row['billingcycle'],
             $row['total_months'],
-            $this->curFormat($row['total_paid']),
+            // $this->curFormat($row['total_paid']),
+            $this->curFormat($row['total_paid_period']),
             );
           $grandTotal += $row['firstpaymentamount'];
           $totalMonths += $row['total_months'];
           $grandTotalPaid += $row['total_paid'];
+          $grandTotalPaidPeriod += $row['total_paid_period'];
           $this->_reportData["tablevalues"][] = preg_replace('/^\*+/','',$this->_printMode ? $this->stripTags($reportLine) : $reportLine);
         }
 
@@ -215,7 +234,8 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
             '',
             '',
             $totalMonths,
-            $this->curFormat($grandTotalPaid)
+            // $this->curFormat($grandTotalPaid),
+            $this->curFormat($grandTotalPaidPeriod)
             );
           $this->_reportData["tablevalues"][] = $reportLine;
           $reportLine = array(
@@ -231,7 +251,8 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
             '',
             '',
             round($totalMonths / $rowCount, 2),
-            $this->curFormat($grandTotalPaid / $rowCount)
+            // $this->curFormat($grandTotalPaid / $rowCount),
+            $this->curFormat($grandTotalPaidPeriod / $rowCount)
             );
           $this->_reportData["tablevalues"][] = $reportLine;
         }
