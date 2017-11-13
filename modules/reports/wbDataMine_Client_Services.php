@@ -16,7 +16,7 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
  * Report Class
  ************************************************************************************************************/
 
-  class wbDataMine_ServiceReport extends wbDataMine {
+  class wbDataMine_Client_Services extends wbDataMine {
 
     function __construct(){
 
@@ -265,4 +265,4 @@ if( !defined("WHMCS") ) die("This file cannot be accessed directly");
  * Header & Footer Text
  ************************************************************************************************************/
 
-  $reportdata = (new wbDataMine_ServiceReport())->getReportData();
+  $reportdata = (new wbDataMine_Client_Services())->getReportData();
